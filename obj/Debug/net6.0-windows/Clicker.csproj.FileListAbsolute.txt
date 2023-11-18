@@ -1,0 +1,17 @@
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\bin\Debug\net6.0-windows\Clicker.exe
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\bin\Debug\net6.0-windows\Clicker.deps.json
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\bin\Debug\net6.0-windows\Clicker.runtimeconfig.json
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\bin\Debug\net6.0-windows\Clicker.dll
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\bin\Debug\net6.0-windows\Clicker.pdb
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.csproj.AssemblyReference.cache
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.Form1.resources
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.csproj.GenerateResource.cache
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.AssemblyInfoInputs.cache
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.AssemblyInfo.cs
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.csproj.CoreCompileInputs.cache
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.dll
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\refint\Clicker.dll
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.pdb
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\Clicker.genruntimeconfig.cache
+C:\Users\Tommy\Desktop\C# Projects\Clicker\Clicker\obj\Debug\net6.0-windows\ref\Clicker.dll
