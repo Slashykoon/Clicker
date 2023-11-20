@@ -1,9 +1,11 @@
 using Microsoft.VisualBasic.Devices;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading;
+using static Clicker.Form1;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.TaskbarClock;
 
 namespace Clicker
@@ -40,7 +42,6 @@ namespace Clicker
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
 
-
         [StructLayout(LayoutKind.Sequential)]
         private struct POINT
         {
@@ -56,6 +57,7 @@ namespace Clicker
             public int flags;
             public int time;
             public IntPtr dwExtraInfo;
+
         }
 
         // Custom class to represent mouse point information
@@ -66,7 +68,8 @@ namespace Clicker
             public DateTime Time { get; set; }
             public double Duration { get; set; }
             public string TypeofAction { get; set; }
-    }
+
+        }
 
         const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
         const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
@@ -81,7 +84,6 @@ namespace Clicker
         const uint MOUSEEVENTF_WHEEL = 0x0800;
         const uint MOUSEEVENTF_HWHEEL = 0x01000;
 
-
         private const int WH_MOUSE_LL = 14;
         private const int WM_LBUTTONDOWN = 0x0201;
         private const int WM_LBUTTONUP = 0x0202;
@@ -92,115 +94,206 @@ namespace Clicker
         private static int globalMouseX;
         private static int globalMouseY;
 
-        // List to store information for each point
-        private static List<MousePointInfo> mousePoints = new List<MousePointInfo>();
+        // ConcurrentQueue to store information for each point
+        private static ConcurrentQueue<MousePointInfo> mousePoints = new ConcurrentQueue<MousePointInfo>();
 
-        private static int iStep =0;
-        private static int iStepLearn = 0;
+        private static int iStep = 0;
+        //private static int iStepLearn = 0;
 
         private static bool bInLearning = false;
-
+        private static bool bExecuteSequence = false;
         private DateTime targetDate;
 
-        //private static object lockmousePoints = new object();
-
-        SemaphoreSlim semaphore = new(3);
-
-        public void clickSimulator(Point p)
-        {
-            SetCursorPos(mousePoints[iStep].MouseX, mousePoints[iStep].MouseY);
-
-            /*if ((int)mousePoints[iStep].Duration != 0)
-            {
-                timer1.Interval = (int)mousePoints[iStep].Duration * 1000;
-            }*/
-
-            label2.Text = timer1.Interval.ToString();
-       
-            if (mousePoints[iStep].TypeofAction == "DOWN")
-            {
-                mouse_event((int)(MOUSEEVENTF_LEFTDOWN), p.X, p.Y, 0, 0);   
-            }
-            if (mousePoints[iStep].TypeofAction == "UP")
-            {  
-                mouse_event((int)(MOUSEEVENTF_LEFTUP), p.X, p.Y, 0, 0);
-            }
-            label1.Text = p.ToString();
-        }
-
-        private void timer1_Tick(object sender, EventArgs e)
-        {
-            if (mousePoints[iStep] is not null && (DateTime.Now >= targetDate))
-            {
-                targetDate = DateTime.Now.AddSeconds(mousePoints[iStep].Duration);
-                clickSimulator(new Point(MousePosition.X, MousePosition.Y));
-                iStep = iStep + 1;
-            }
-            else
-            {
-                iStep = 0;
-                
-            }
-        }
-
+        private static bool bHMI_Refresh_Cancel = false;
+        private static bool bStepExec_Cancel = false;
+        
 
         bool stop = true;
         private void button1_Click(object sender, EventArgs e)
         {
-
             stop = (stop) ? false : true;
-            
+
             if (!stop)
             {
-                timer1.Start();
+                bExecuteSequence = true;
                 button1.BackColor = Color.LightGreen;
             }
             else
             {
-                timer1.Stop();
+                bExecuteSequence = false;
                 button1.BackColor = Color.LightGray;
-                iStep = 0;
             }
-        
         }
 
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-
             // Set the global mouse hook
             hookId = SetHook(llMouseProc);
             Task.Run(() => HMI_Refresh());
-
-            timer1.Interval = 200;
-            //timer2.Interval = 1000;
+            Task.Run(() => Steps_Execute());
         }
 
+        public void clickSimulator(Point p)
+        {
+
+            MousePointInfo currentPoint = mousePoints.Skip(iStep).FirstOrDefault();
+
+            if (currentPoint != null)
+            {
+                SetCursorPos(currentPoint.MouseX, currentPoint.MouseY);
+
+                if (currentPoint.TypeofAction == "DOWN")
+                {
+                    mouse_event((int)(MOUSEEVENTF_LEFTDOWN), p.X, p.Y, 0, 0);
+                }
+                if (currentPoint.TypeofAction == "UP")
+                {
+                    mouse_event((int)(MOUSEEVENTF_LEFTUP), p.X, p.Y, 0, 0);
+                }
+                Invoke(new Action(() => label1.Text = p.ToString()+ " Step : " + iStep.ToString()));
+
+            }
+        }
+
+        private int tx;
+        private int ty;
+        private static double a { get; set; }
+        private static double b { get; set; }
+        private static int IntervalX;
+        private static bool bGeneratePoints = false;
+        private static List<int> IntervalGenerated = new List<int>();
+        private static int iStepGenerated = 0;
+        private static void ComputeLinearEquation(double x1, double y1, double x2, double y2)
+        {
+            // Compute the slope a
+            a = (y2 - y1) / (x2 - x1);
+
+            // Compute the offset b
+            b = y1 - a * x1;
+        }
+        private static double Calculate(double x)
+        {
+            // Calculate y using the generated linear equation
+            return a * x + b;
+        }
+
+        private void Steps_Execute()
+        {
+            int t = 0 ;
+            while (!bStepExec_Cancel)
+            {
+                if (bExecuteSequence)
+                {
+                    MousePointInfo currentPoint = mousePoints.Skip(iStep).FirstOrDefault();
+                    MousePointInfo nextPoint = mousePoints.Skip(iStep+1).FirstOrDefault();
+
+                    //Main steps
+                    if (currentPoint != null)
+                    {
+                        if (DateTime.Now >= targetDate)
+                        {
+                            targetDate = DateTime.Now.AddSeconds(currentPoint.Duration);
+                            clickSimulator(new Point(MousePosition.X, MousePosition.Y));
+                            if (nextPoint != null)
+                            {
+                                bGeneratePoints = true;
+                                iStepGenerated = 0;
+                            }
+                            else
+                            {
+                                iStepGenerated = 0;
+                                IntervalGenerated.Clear();
+                            }
+                        }
+                        if(bGeneratePoints)
+                        {
+                            bGeneratePoints = false;
+                            t = (int)currentPoint.Duration * 1000 / 50;
+                            if(t>0)
+                            {
+                                if (currentPoint.MouseX < nextPoint.MouseX )
+                                {
+                                    IntervalX = (nextPoint.MouseX - currentPoint.MouseX ) / t;
+                                }
+                                else
+                                {
+                                    IntervalX = (nextPoint.MouseX - currentPoint.MouseX) / t;
+                                    //IntervalX = (currentPoint.MouseX - nextPoint.MouseX ) / t;
+                                }
+                            
+                                ComputeLinearEquation(currentPoint.MouseX, currentPoint.MouseY, nextPoint.MouseX, nextPoint.MouseY);
+                                for(int i=1;i<= t ; i++)
+                                {
+                                    IntervalGenerated.Add((currentPoint.MouseX+(i*IntervalX)));
+                                }
+                            }
+                        }
+                        //Calculate(IntervalGenerated[iStepGenerated]);
+                        if (IntervalGenerated.Count > 0)
+                        {
+                            if (iStepGenerated >= IntervalGenerated.Count - 1)
+                            {
+                                iStepGenerated = IntervalGenerated.Count - 1;
+                                iStep++;
+                            }
+                            SetCursorPos(IntervalGenerated[iStepGenerated], (int)Calculate(IntervalGenerated[iStepGenerated]));
+                            iStepGenerated++;
+                        }
+                        else
+                        {
+                            iStep++;
+                        }
+                    }
+                    else
+                    {
+                        iStep = 0;
+                        
+                    }
+                    
+
+                }
+                else
+                {
+                    iStep = 0;
+                    iStepGenerated = 0;
+                }
+
+                Thread.Sleep(50);
+            }
+        }
         private void HMI_Refresh()
         {
-            //richTextBox1.Text = "";
-            while (true)
+            while (!bHMI_Refresh_Cancel)
             {
                 Invoke(new Action(() => richTextBox1.Clear()));
 
-                    foreach (MousePointInfo NPI in mousePoints)
-                    {
-                        Invoke(new Action(() => richTextBox1.AppendText(NPI.MouseX.ToString() + " " + NPI.MouseY.ToString() + " D: " + NPI.Duration.ToString() + " A: " + NPI.TypeofAction.ToString() + "\r\n")));
-                        //richTextBox1.Text = richTextBox1.Text + NPI.MouseX.ToString() + " " + NPI.MouseY.ToString() + " D: " + NPI.Duration.ToString() + " A: " + NPI.TypeofAction.ToString() + "\r\n";
-                    }
-           
-                Task.Delay(500).Wait();
+                Invoke(new Action(() => progressBar1.Maximum = mousePoints.Count));
+                if(iStep<= mousePoints.Count)
+                {
+                    Invoke(new Action(() => progressBar1.Value = iStep));
+                }
+                
+
+                foreach (MousePointInfo NPI in mousePoints.ToArray())
+                {
+                    Invoke(new Action(() => richTextBox1.AppendText($"{NPI.MouseX} {NPI.MouseY} D: {NPI.Duration} A: {NPI.TypeofAction}\r\n")));
+                }
+              
+                Thread.Sleep(200);
             }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            bHMI_Refresh_Cancel = true;
+            bStepExec_Cancel = true;
             base.OnFormClosing(e);
+            
             // Unhook the global mouse hook
             UnhookWindowsHookEx(hookId);
+       
         }
-
-
 
         private static IntPtr SetHook(LowLevelMouseProc proc)
         {
@@ -212,7 +305,8 @@ namespace Clicker
         }
 
         private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
-         private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+
+        private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
             MSLLHOOKSTRUCT hookStruct = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
             // Get the global mouse position on click
@@ -223,25 +317,21 @@ namespace Clicker
             {
                 if (bInLearning)
                 {
-
-                    mousePoints.Add(new MousePointInfo
+                    mousePoints.Enqueue(new MousePointInfo
                     {
                         MouseX = globalMouseX,
                         MouseY = globalMouseY,
                         Time = DateTime.Now,
                         TypeofAction = "DOWN"
                     });
-  
 
-                    iStepLearn++;
                 }
             }
             if (nCode >= 0 && wParam == (IntPtr)WM_LBUTTONUP)
             {
                 if (bInLearning)
                 {
-
-                    mousePoints.Add(new MousePointInfo
+                    mousePoints.Enqueue(new MousePointInfo
                     {
                         MouseX = globalMouseX,
                         MouseY = globalMouseY,
@@ -249,19 +339,32 @@ namespace Clicker
                         TypeofAction = "UP"
                     });
 
-                    mousePoints[iStepLearn-1].Duration = (mousePoints[iStepLearn].Time - mousePoints[iStepLearn-1].Time).TotalSeconds;
-                    mousePoints[iStepLearn].Duration = mousePoints[iStepLearn - 1].Duration;
-                    iStepLearn++;
+                    // Convert ConcurrentQueue to a list
+                    List<MousePointInfo> mousePointsList = mousePoints.ToList();
+
+                    // Ensure there are at least two points
+                    if (mousePointsList.Count >= 2)
+                    {
+                        // Access the last two points
+                        MousePointInfo lastPoint = mousePointsList.Last();
+                        MousePointInfo previousPoint = mousePointsList[mousePointsList.Count - 2];
+
+                        //lastPoint.Duration = (lastPoint.Time - previousPoint.Time).TotalSeconds;
+                        previousPoint.Duration = (lastPoint.Time - previousPoint.Time).TotalSeconds;
+                        //previousPoint.Duration = lastPoint.Duration;
+                    }
+
                 }
+               
             }
             return CallNextHookEx(hookId, nCode, wParam, lParam);
         }
-     
+
         bool stopLearn = true;
         private void button2_Click(object sender, EventArgs e)
         {
             stopLearn = (stopLearn) ? false : true;
-            if(stopLearn)
+            if (stopLearn)
             {
                 bInLearning = false;
                 button2.BackColor = Color.LightGray;
@@ -272,30 +375,20 @@ namespace Clicker
                 // Check the user's response
                 if (result == DialogResult.Yes)
                 {
-                    if(mousePoints.Count >= 2)
+                    if (mousePoints.Count >= 2)
                     {
-                        mousePoints.RemoveRange(mousePoints.Count - 2, 2);
+                        mousePoints = new ConcurrentQueue<MousePointInfo>(mousePoints.Take(mousePoints.Count - 2));
                     }
+                    //iStepLearn = mousePoints.Count;
                 }
-             }
+            }
             else
             {
                 button2.BackColor = Color.LightGreen;
                 button1.Enabled = false;
                 bInLearning = true;
-                //this.WindowState = FormWindowState.Minimized;
             }
-            //timer2.Start();
         }
 
-        private void timer2_Tick(object sender, EventArgs e)
-        {
-
-            /*richTextBox1.Text = "";
-            foreach(MousePointInfo NPI in mousePoints)
-            {
-                richTextBox1.Text = richTextBox1.Text + NPI.MouseX.ToString() + " " + NPI.MouseY.ToString() + " D: " + NPI.Duration.ToString() + " A: " + NPI.TypeofAction.ToString() + "\r\n";
-            }*/
-        }
     }
 }
